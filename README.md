@@ -41,14 +41,14 @@ npm run dev                # tsx watch (port 5380)
 | 項目 | 状態 |
 |---|---|
 | Hono ルーティング | ✅ scaffold |
-| Cernere PASETO middleware | ⚠️ skeleton (公開鍵検証は未実装、 payload デコードのみ) |
-| Postgres | ⚠️ Drizzle 依存追加済、 実体は in-memory store |
-| 子供プロファイル CRUD | ✅ in-memory |
-| スコア記録 | ✅ in-memory + last-write-wins |
+| Cernere PASETO middleware | ✅ paseto-ts で実検証、 公開鍵は env or `/.well-known/paseto.pub` fetch (失敗時 dev フォールバック) |
+| Postgres | ✅ Drizzle スキーマ + client (PG URL あれば PG、 無ければ in-memory) |
+| 子供プロファイル CRUD | ✅ PG/in-memory 切替対応 |
+| スコア記録 | ✅ in-memory + last-write-wins (PG 化は Phase 3 で同等手順で対応可) |
 | 分岐ツリー | ✅ in-memory + 3 ルール (easier / harder / kanji-mix) |
 | 学習指導要領マップ | ✅ 静的データ (placeholder、 spec/manabi-no-tabibito.md と同期 TODO) |
 | Memoria 通知 | ✅ fetch 実装 (env 未設定なら no-op) |
-| Claude API proxy | ❌ Phase 3 で予定 |
+| Claude API proxy | ✅ free モードのみ、 `ANTHROPIC_API_KEY` 必須、 claude-haiku-4-5 で 1 ターン |
 | テスト | ❌ vitest 依存のみ追加、 spec 未記載 |
 
 ## 次の TODO
