@@ -64,6 +64,19 @@ export async function ensureChildOwnership(parentUserId: string, childId: string
   return !!p && p.parentUserId === parentUserId;
 }
 
+// childId からその親 (userId) を引く。 realtime 層は childId しか持たないので、 Memoria 通知の
+// userId 解決に使う。 見つからなければ null (= Memoria に紐づけられないので通知しない)。
+export async function getParentUserId(childId: string): Promise<string | null> {
+  if (isPostgresEnabled()) {
+    const db = getDb()!;
+    const rows = await db.select().from(profilesTable)
+      .where(eq(profilesTable.childId, childId))
+      .limit(1);
+    return rows[0] ? rows[0].parentUserId : null;
+  }
+  return memoryStore.get(childId)?.parentUserId ?? null;
+}
+
 function rowToProfile(row: typeof profilesTable.$inferSelect): ChildProfile {
   return {
     childId: row.childId,

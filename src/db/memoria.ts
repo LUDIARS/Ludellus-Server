@@ -13,6 +13,8 @@ export interface MemoriaActivityPayload {
   durationMs?: number;
   startedAt?: string;
   endedAt?: string;
+  // 勝敗 (任意)。 score/total からも導けるが、 学習 POI 完了の通知では明示する。
+  result?: "win" | "lose";
 }
 
 export async function notifyMemoria(payload: MemoriaActivityPayload): Promise<void> {
