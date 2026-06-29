@@ -2,6 +2,7 @@
 // クライアントの native GameModule と id で対応する (id がワールド POI の contentRef になる)。
 
 import type { TuningSchema, TuningValues } from "./tuningSchema.js";
+import { validateBehaviorSpec, type BehaviorSpec } from "./behaviorSchema.js";
 
 export type TuneIntent = "easier" | "harder" | "kanji-mix" | "review" | "challenge";
 
@@ -15,7 +16,64 @@ export interface GameModuleDef {
   tuningSchema: TuningSchema;
   // ルールベース改修: 現在値 → 差分。 LLM 不在/不正時のフォールバック兼、 典型改修の確定処理。
   rules: Partial<Record<TuneIntent, (v: TuningValues) => Partial<TuningValues>>>;
+  // Tier2 の既定挙動。 クライアント native の build_*_spec と対の wire 形式。 サーバ配布の正本で、
+  // LLM/エディタが編集した候補は validateBehaviorSpec を通してからこれを差し替える。
+  behaviorSpec?: BehaviorSpec;
 }
+
+// number_catch の既定 BehaviorSpec (native build_number_catch_spec と同じ有界文法・同じ wire 形式)。
+// 勝敗とスポーンの挙動をデータで宣言する。 サーバはこれを配布し、 LLM/ライブ編集はこれを差し替える。
+const NUMBER_CATCH_BEHAVIOR: BehaviorSpec = {
+  initial_state: "playing",
+  states: [
+    {
+      name: "playing",
+      rules: [
+        // 入室でスポーンタイマー開始 (spawn_interval 秒ごとに timer:spawn)。
+        { event: "on_enter", actions: [
+          { kind: "start_timer", key: "spawn", value: { a: { var: "spawn_interval" } } },
+        ] },
+        // スポーンタイマー満了: 数を 1 体 spawn して再スケジュール。
+        { event: "timer:spawn", actions: [
+          { kind: "spawn", key: "number", value: { a: { lit: 1 } } },
+          { kind: "start_timer", key: "spawn", value: { a: { var: "spawn_interval" } } },
+        ] },
+        // 正解を掴んだ: score+1 → 勝利判定。
+        { event: "caught_correct", actions: [
+          { kind: "add_var", key: "score", value: { a: { lit: 1 } } },
+          { kind: "play_sfx", key: "correct" },
+          { kind: "emit", key: "check_win" },
+        ] },
+        // 間違いを掴んだ: life-1 → 敗北判定。
+        { event: "caught_wrong", actions: [
+          { kind: "add_var", key: "life", value: { a: { lit: -1 } } },
+          { kind: "play_sfx", key: "wrong" },
+          { kind: "emit", key: "check_lose" },
+        ] },
+        // 勝利判定: score >= target。
+        { event: "check_win", conditions: [{ var: "score", op: "ge", rhs: { var: "target" } }],
+          actions: [
+            { kind: "play_sfx", key: "win" },
+            { kind: "end_game", key: "win" },
+            { kind: "goto", key: "won" },
+          ] },
+        // 敗北判定: life <= 0。
+        { event: "check_lose", conditions: [{ var: "life", op: "le", rhs: { lit: 0 } }],
+          actions: [
+            { kind: "play_sfx", key: "lose" },
+            { kind: "end_game", key: "lose" },
+            { kind: "goto", key: "lost" },
+          ] },
+      ],
+    },
+    { name: "won", rules: [] },
+    { name: "lost", rules: [] },
+  ],
+  // どの state でも入室時にスポーンを止める (終了 state でスポーン継続させない)。
+  global_rules: [
+    { event: "on_enter", actions: [{ kind: "cancel_timer", key: "spawn" }] },
+  ],
+};
 
 // 数つかみ (算数): 落ちてくる数字を、 指定の操作 (たす/ひく/かぞえる) に合うものだけ掴む。
 const NUMBER_CATCH: GameModuleDef = {
@@ -49,6 +107,7 @@ const NUMBER_CATCH: GameModuleDef = {
     review: (v) => ({ spawnRate: Math.max(0.3, (v.spawnRate as number) - 0.2), targetCount: Math.max(3, (v.targetCount as number) - 2) }),
     challenge: (v) => ({ spawnRate: (v.spawnRate as number) + 0.6, numberMax: (v.numberMax as number) + 10 }),
   },
+  behaviorSpec: NUMBER_CATCH_BEHAVIOR,
 };
 
 const REGISTRY = new Map<string, GameModuleDef>([
@@ -70,4 +129,13 @@ export function gameModulesForUnit(unitId: string): GameModuleDef[] {
 
 export function allGameModules(): GameModuleDef[] {
   return [...REGISTRY.values()];
+}
+
+// 配布用の既定 BehaviorSpec を、 配布前に必ず有界文法で検証して返す (validateTuning と同じ防御)。
+// 正規化済み spec を返す。 spec 未定義/不正なら null + errors。 これがエディタ/LLM 編集の基準にもなる。
+export function getGameBehaviorSpec(id: string): { spec: BehaviorSpec | null; errors: string[] } {
+  const game = REGISTRY.get(id);
+  if (!game) return { spec: null, errors: [`unknown game: ${id}`] };
+  if (!game.behaviorSpec) return { spec: null, errors: [`no behaviorSpec for game: ${id}`] };
+  return validateBehaviorSpec(game.behaviorSpec);
 }

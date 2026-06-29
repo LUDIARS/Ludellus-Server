@@ -13,6 +13,7 @@ import { AutoLoginAuth } from "./session/Auth.js";
 import { QuicTransport } from "./transport/QuicTransport.js";
 import { CurriculumProgressSource } from "./world/CurriculumProgressSource.js";
 import { PROTOCOL_VERSION } from "./protocol/messages.js";
+import { notifyPoiResult } from "./poiResultNotify.js";
 
 async function main(): Promise<void> {
   const port = Number(process.env.LUDELLUS_REALTIME_PORT ?? 5381);
@@ -34,9 +35,11 @@ async function main(): Promise<void> {
   const world = new World({
     tickRateHz: Number(process.env.LUDELLUS_TICK_HZ ?? 20),
     progress: new CurriculumProgressSource(),
-    onPoiResult: (childId, poiId, result) => {
-      // 学習結果は集計値のみ。 後で Memoria 通知 (REST 層の memoria.ts) に配線する。
-      console.log(`[ludellus-realtime] poi result child=${childId} poi=${poiId} score=${result.score}/${result.total}`);
+    onPoiResult: (childId, poiId, result, subject) => {
+      // 学習結果は集計値のみ。 Memoria/サーバへ通知 (win/lose・教科)。 失敗してもサーバは落とさない。
+      console.log(`[ludellus-realtime] poi result child=${childId} poi=${poiId} subject=${subject} score=${result.score}/${result.total}`);
+      notifyPoiResult({ childId, poiId, subject, result }).catch((err) =>
+        console.warn("[ludellus-realtime] memoria notify failed:", err?.message ?? err));
     },
   });
 

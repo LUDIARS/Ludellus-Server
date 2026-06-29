@@ -42,7 +42,8 @@ export interface ChannelDeps {
   tickRateHz: number;
   aoi?: AoiConfig;
   // 永続化フック (任意)。 REST 層 / Memoria への転送に使う。 raw 入力は渡さない。
-  onPoiResult?: (childId: string, poiId: string, result: { score: number; total: number; durationMs: number }) => void;
+  // subject = POI の教科 (math / kokugo …)。 Memoria 通知の教科タグに使う。
+  onPoiResult?: (childId: string, poiId: string, result: { score: number; total: number; durationMs: number }, subject: string) => void;
   onInventoryChange?: (childId: string, items: { itemId: string; qty: number }[]) => void;
 }
 
@@ -211,7 +212,7 @@ export class Channel {
     } else if (action === "complete") {
       poi.participants.delete(entityId);
       if (poi.visibility === "solo") poi.state = "completed";
-      if (result) this.deps.onPoiResult?.(slot.entity.childId, poiId, result);
+      if (result) this.deps.onPoiResult?.(slot.entity.childId, poiId, result, poi.subject);
     }
     const st: ServerMessage = { t: "poiState", poiId, state: poi.state, participants: [...poi.participants] };
     // 操作した本人には POI が遠くても必ず返す。 周囲の他プレイヤーには (shared の) 状態を配信。
